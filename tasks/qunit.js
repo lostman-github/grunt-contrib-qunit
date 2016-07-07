@@ -14,9 +14,6 @@ module.exports = function(grunt) {
   var path = require('path');
   var url = require('url');
 
-  // External lib.
-  var phantomjs = require('grunt-lib-phantomjs').init(grunt);
-
   // Keep track of the last-started module, test and status.
   var options, currentModule, currentTest, status;
   // Keep track of the last-started test(s).
@@ -86,98 +83,101 @@ module.exports = function(grunt) {
     return hex.slice(-8);
   };
 
-  // QUnit hooks.
-  phantomjs.on('qunit.moduleStart', function(name) {
-    unfinished[name] = true;
-    currentModule = name;
-  });
+  var initPhantomjsHooks = function(phantomjs) {
+    // QUnit hooks.
+    phantomjs.on('qunit.moduleStart', function(name) {
+      unfinished[name] = true;
+      currentModule = name;
+    });
 
-  phantomjs.on('qunit.moduleDone', function(name/*, failed, passed, total*/) {
-    delete unfinished[name];
-  });
+    phantomjs.on('qunit.moduleDone', function(name/*, failed, passed, total*/) {
+      delete unfinished[name];
+    });
 
-  phantomjs.on('qunit.log', function(result, actual, expected, message, source) {
-    if (!result) {
-      failedAssertions.push({
-        actual: actual, expected: expected, message: message, source: source,
-        testName: currentTest
-      });
-    }
-  });
-
-  phantomjs.on('qunit.testStart', function(name) {
-    currentTest = (currentModule ? currentModule + ' - ' : '') + name;
-    grunt.verbose.write(currentTest + '...');
-  });
-
-  phantomjs.on('qunit.testDone', function(name, failed/*, passed, total*/) {
-    // Log errors if necessary, otherwise success.
-    if (failed > 0) {
-      // list assertions
-      if (grunt.option('verbose')) {
-        grunt.log.error();
-        logFailedAssertions();
-      } else {
-        grunt.log.write('F'.red);
+    phantomjs.on('qunit.log', function(result, actual, expected, message, source) {
+      if (!result) {
+        failedAssertions.push({
+          actual: actual, expected: expected, message: message, source: source,
+          testName: currentTest
+        });
       }
-    } else {
-      grunt.verbose.ok().or.write('.');
-    }
-  });
+    });
 
-  phantomjs.on('qunit.done', function(failed, passed, total, duration) {
-    phantomjs.halt();
-    status.failed += failed;
-    status.passed += passed;
-    status.total += total;
-    status.duration += duration;
-    // Print assertion errors here, if verbose mode is disabled.
-    if (!grunt.option('verbose')) {
+    phantomjs.on('qunit.testStart', function(name) {
+      currentTest = (currentModule ? currentModule + ' - ' : '') + name;
+      grunt.verbose.write(currentTest + '...');
+    });
+
+    phantomjs.on('qunit.testDone', function(name, failed/*, passed, total*/) {
+      // Log errors if necessary, otherwise success.
       if (failed > 0) {
-        grunt.log.writeln();
-        logFailedAssertions();
-      } else if (total === 0) {
-        warnUnlessForced('0/0 assertions ran (' + duration + 'ms)');
+        // list assertions
+        if (grunt.option('verbose')) {
+          grunt.log.error();
+          logFailedAssertions();
+        } else {
+          grunt.log.write('F'.red);
+        }
       } else {
-        grunt.log.ok();
+        grunt.verbose.ok().or.write('.');
       }
-    }
-  });
+    });
 
-  // Re-broadcast qunit events on grunt.event.
-  phantomjs.on('qunit.*', function() {
-    var args = [this.event].concat(grunt.util.toArray(arguments));
-    grunt.event.emit.apply(grunt.event, args);
-  });
+    phantomjs.on('qunit.done', function(failed, passed, total, duration) {
+      phantomjs.halt();
+      status.failed += failed;
+      status.passed += passed;
+      status.total += total;
+      status.duration += duration;
+      // Print assertion errors here, if verbose mode is disabled.
+      if (!grunt.option('verbose')) {
+        if (failed > 0) {
+          grunt.log.writeln();
+          logFailedAssertions();
+        } else if (total === 0) {
+          warnUnlessForced('0/0 assertions ran (' + duration + 'ms)');
+        } else {
+          grunt.log.ok();
+        }
+      }
+    });
 
-  // Built-in error handlers.
-  phantomjs.on('fail.load', function(url) {
-    phantomjs.halt();
-    grunt.verbose.write('...');
-    grunt.event.emit('qunit.fail.load', url);
-    grunt.log.error('PhantomJS unable to load "' + url + '" URI.');
-    status.failed += 1;
-    status.total += 1;
-  });
+    // Re-broadcast qunit events on grunt.event.
+    phantomjs.on('qunit.*', function() {
+      var args = [this.event].concat(grunt.util.toArray(arguments));
+      grunt.event.emit.apply(grunt.event, args);
+    });
 
-  phantomjs.on('fail.timeout', function() {
-    phantomjs.halt();
-    grunt.log.writeln();
-    grunt.event.emit('qunit.fail.timeout');
-    grunt.log.error('PhantomJS timed out, possibly due to:\n' +
-        '- QUnit is not loaded correctly.\n- A missing QUnit start() call.\n' +
-        '- Or, a misconfiguration of this task.');
-    status.failed += 1;
-    status.total += 1;
-  });
+    // Built-in error handlers.
+    phantomjs.on('fail.load', function(url) {
+      phantomjs.halt();
+      grunt.verbose.write('...');
+      grunt.event.emit('qunit.fail.load', url);
+      grunt.log.error('PhantomJS unable to load "' + url + '" URI.');
+      status.failed += 1;
+      status.total += 1;
+    });
 
-  phantomjs.on('error.onError', function (msg, stackTrace) {
-    grunt.event.emit('qunit.error.onError', msg, stackTrace);
-  });
+    phantomjs.on('fail.timeout', function() {
+      phantomjs.halt();
+      grunt.log.writeln();
+      grunt.event.emit('qunit.fail.timeout');
+      grunt.log.error('PhantomJS timed out, possibly due to:\n' +
+          '- QUnit is not loaded correctly.\n- A missing QUnit start() call.\n' +
+          '- Or, a misconfiguration of this task.');
+      status.failed += 1;
+      status.total += 1;
+    });
+
+    phantomjs.on('error.onError', function (msg, stackTrace) {
+      grunt.event.emit('qunit.error.onError', msg, stackTrace);
+    });
+  }
 
   grunt.registerMultiTask('qunit', 'Run QUnit unit tests in a headless PhantomJS instance.', function() {
     // Merge task-specific and/or target-specific options with these defaults.
     options = this.options({
+      engine: 'grunt-lib-phantomjs',
       // Default PhantomJS timeout.
       timeout: 5000,
       // QUnit-PhantomJS bridge file to be injected.
@@ -191,6 +191,10 @@ module.exports = function(grunt) {
       httpBase: false,
       summaryOnly: false
     });
+
+    // External lib.
+    var phantomjs = require(options.engine).init(grunt);
+    initPhantomjsHooks(phantomjs);
 
     var urls;
 
